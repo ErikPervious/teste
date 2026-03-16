@@ -1,5 +1,5 @@
 """
-Script para gerar commits com datas aleatorias entre junho/2025 e hoje.
+Script para gerar commits com datas aleatorias entre jan/2025 e hoje.
 Usa GIT_AUTHOR_DATE e GIT_COMMITTER_DATE para definir a data de cada commit
 sem precisar alterar o relogio do sistema.
 
@@ -17,16 +17,11 @@ from datetime import datetime, timedelta
 # ─── CONFIGURACAO ────────────────────────────────────────────────────────────
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))  # pasta deste script
-START_DATE = datetime(2025, 6, 1)                       # inicio: 01/jun/2025
+START_DATE = datetime(2025, 1, 1)                       # inicio: 01/jan/2025
 END_DATE = datetime.now()                                # fim: hoje
 
-# Faixa de commits por dia (dias que serao escolhidos)
-MIN_COMMITS_PER_DAY = 1
-MAX_COMMITS_PER_DAY = 6
-
-# Probabilidade de um dia ter commits (0.0 a 1.0)
-# ~40% dos dias terao commits, simulando atividade real
-DAY_ACTIVITY_PROBABILITY = 0.40
+# Maximo de commits a gerar
+MAX_TOTAL_COMMITS = 500
 
 # Mensagens de commit possiveis
 COMMIT_MESSAGES = [
@@ -111,31 +106,58 @@ def ensure_repo():
 def generate_commit_plan():
     """
     Gera um plano: lista de (datetime, mensagem) ordenada cronologicamente.
+    Distribui ate MAX_TOTAL_COMMITS de forma aleatoria pelos dias do periodo.
+    Alguns dias tem mais commits, outros menos, outros nenhum.
     """
     total_days = (END_DATE - START_DATE).days
     if total_days <= 0:
         print("ERRO: START_DATE deve ser anterior a END_DATE.")
         sys.exit(1)
 
+    # Sortear quantos commits vamos criar (entre 70% e 100% do maximo)
+    total_commits = random.randint(int(MAX_TOTAL_COMMITS * 0.7), MAX_TOTAL_COMMITS)
+
+    # Distribuir commits em dias aleatorios com pesos variados
+    # Criar lista de todos os dias disponiveis
+    all_days = [START_DATE + timedelta(days=d) for d in range(total_days + 1)]
+
+    # Selecionar dias ativos (~40-60% dos dias)
+    num_active_days = random.randint(
+        int(len(all_days) * 0.35),
+        int(len(all_days) * 0.55),
+    )
+    active_days = sorted(random.sample(all_days, min(num_active_days, len(all_days))))
+
+    # Distribuir commits pelos dias ativos usando pesos aleatorios
+    # Isso cria variacao natural: alguns dias com muitos commits, outros com poucos
+    weights = [random.random() ** 0.5 for _ in active_days]  # peso com tendencia
+    total_weight = sum(weights)
+
     plan = []
-    for day_offset in range(total_days + 1):
-        current_date = START_DATE + timedelta(days=day_offset)
+    commits_remaining = total_commits
 
-        # Decidir se esse dia tera commits
-        if random.random() > DAY_ACTIVITY_PROBABILITY:
-            continue
+    for i, day in enumerate(active_days):
+        if commits_remaining <= 0:
+            break
 
-        # Quantos commits nesse dia
-        num_commits = random.randint(MIN_COMMITS_PER_DAY, MAX_COMMITS_PER_DAY)
+        # Calcular commits para esse dia proporcionalmente ao peso
+        if i == len(active_days) - 1:
+            num_commits = commits_remaining
+        else:
+            share = weights[i] / total_weight * total_commits
+            num_commits = max(1, round(share))
+            num_commits = min(num_commits, commits_remaining)
 
         for _ in range(num_commits):
             # Hora aleatoria entre 08:00 e 22:00
             hour = random.randint(8, 22)
             minute = random.randint(0, 59)
             second = random.randint(0, 59)
-            commit_dt = current_date.replace(hour=hour, minute=minute, second=second)
+            commit_dt = day.replace(hour=hour, minute=minute, second=second)
             message = random.choice(COMMIT_MESSAGES)
             plan.append((commit_dt, message))
+
+        commits_remaining -= num_commits
 
     # Ordenar por data
     plan.sort(key=lambda x: x[0])
@@ -179,8 +201,7 @@ def main():
     print("=" * 60)
     print(f"  Periodo: {START_DATE.strftime('%d/%m/%Y')} ate {END_DATE.strftime('%d/%m/%Y')}")
     print(f"  Repositorio: {REPO_DIR}")
-    print(f"  Probabilidade de atividade/dia: {DAY_ACTIVITY_PROBABILITY * 100:.0f}%")
-    print(f"  Commits por dia ativo: {MIN_COMMITS_PER_DAY}-{MAX_COMMITS_PER_DAY}")
+    print(f"  Maximo de commits: {MAX_TOTAL_COMMITS}")
     print()
 
     ensure_repo()
